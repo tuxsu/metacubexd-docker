@@ -1,0 +1,30 @@
+FROM caddy:builder AS builder
+
+RUN xcaddy build \
+	--with github.com/caddy-dns/cloudflare
+
+RUN apk add --no-cache tzdata
+
+RUN mkdir -p /config/caddy /data/caddy
+
+
+FROM scratch
+
+ENV TZ=UTC
+ENV XDG_CONFIG_HOME=/config
+ENV XDG_DATA_HOME=/data
+
+COPY metacubexd/ /srv/
+COPY Caddyfile /etc/caddy/Caddyfile
+COPY --from=builder /usr/bin/caddy /caddy
+COPY --from=builder /config /config
+COPY --from=builder /data /data
+COPY --from=builder /usr/share/zoneinfo /usr/share/zoneinfo
+
+WORKDIR /srv
+
+EXPOSE 80 443 443/udp 2019
+
+ENTRYPOINT ["/caddy"]
+
+CMD ["run", "--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile"]

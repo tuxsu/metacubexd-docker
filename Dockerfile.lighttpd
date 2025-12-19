@@ -1,0 +1,40 @@
+FROM alpine AS builder
+
+RUN mkdir -p /var/tmp /var/cache/lighttpd/deflate && \
+	chmod 1777 /var/tmp
+
+RUN apk add --no-cache bsd-compat-headers build-base \
+					scons tzdata pkgconfig pcre2-dev pcre2-static \
+					zlib-dev zlib-static libedit-dev libedit-static \
+					zstd-dev zstd-static brotli-dev brotli-static \
+					bzip2-dev bzip2-static \
+					curl openssl-dev openssl-libs-static ca-certificates
+
+WORKDIR /src
+
+RUN set -eux; \
+    release="$(curl -fsSL https://download.lighttpd.net/lighttpd/releases-1.4.x/latest.txt)"; \
+    curl -fsSL -o "${release}.tar.xz" "https://download.lighttpd.net/lighttpd/releases-1.4.x/${release}.tar.xz"; \
+    tar xf "${release}.tar.xz"; \
+    mv "${release}" lighttpd; \
+	cd lighttpd; \
+	scons -j"$(nproc)" build_fullstatic=1 build_dynamic=0; \
+	cp /src/lighttpd/sconsbuild/fullstatic/build/lighttpd /lighttpd
+
+FROM scratch
+
+WORKDIR /srv
+
+ENV TZ=UTC
+
+COPY --from=builder /lighttpd /lighttpd
+COPY --from=builder /var/tmp /var/tmp
+COPY --from=builder /var/cache/lighttpd/deflate /var/cache/lighttpd/deflate
+COPY --from=builder /usr/share/zoneinfo /usr/share/zoneinfo
+COPY lighttpd.conf /etc/lighttpd/lighttpd.conf
+COPY metacubexd/ /srv/
+
+EXPOSE 80 443 443/udp
+
+ENTRYPOINT ["/lighttpd"]
+CMD ["-D", "-f", "/etc/lighttpd/lighttpd.conf"]

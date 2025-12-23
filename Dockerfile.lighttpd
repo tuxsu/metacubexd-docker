@@ -1,6 +1,7 @@
 FROM alpine AS builder
 
-RUN mkdir -p /var/tmp /var/cache/lighttpd/deflate && \
+RUN set -eux; \
+	mkdir -p /var/tmp /var/cache/lighttpd/deflate; \
 	chmod 1777 /var/tmp
 
 RUN apk add --no-cache bsd-compat-headers build-base \
@@ -14,12 +15,10 @@ WORKDIR /src
 
 RUN set -eux; \
     release="$(curl -fsSL https://download.lighttpd.net/lighttpd/releases-1.4.x/latest.txt)"; \
-    curl -fsSL -o "${release}.tar.xz" "https://download.lighttpd.net/lighttpd/releases-1.4.x/${release}.tar.xz"; \
-    tar xf "${release}.tar.xz"; \
-    mv "${release}" lighttpd; \
-	cd lighttpd; \
+    curl -fsSL "https://download.lighttpd.net/lighttpd/releases-1.4.x/${release}.tar.xz" \
+    	| tar -xJ --strip-components=1; \
 	scons -j"$(nproc)" build_fullstatic=1 build_dynamic=0; \
-	cp /src/lighttpd/sconsbuild/fullstatic/build/lighttpd /lighttpd
+	cp /src/sconsbuild/fullstatic/build/lighttpd /lighttpd
 
 FROM scratch
 

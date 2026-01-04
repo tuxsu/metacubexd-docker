@@ -25,6 +25,7 @@ env:
   REPO_BRANCH: gh-pages
   IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/metacubexd
   DOCKERHUB_IMAGE: docker.io/${{ secrets.DOCKERHUB_USERNAME }}/metacubexd
+  DOCKER_PLATFORMS: linux/amd64,linux/arm64,linux/arm/v7,linux/ppc64le,linux/s390x
 
 jobs:
   build:
@@ -66,13 +67,43 @@ jobs:
           VERSION=$(curl -s $REPO_URL_API/releases/latest | sed -n 's/.*"tag_name":[[:space:]]*"\([^"]*\)".*/\1/p')
           echo "version=${VERSION:-v0.0.0}" >> $GITHUB_OUTPUT
 
+      - name: Set up Go
+        if: ${{ github.event.inputs.dockerfile_name == 'Dockerfile.caddy' || github.event.client_payload.dockerfile_name == 'Dockerfile.caddy' }}
+        uses: actions/setup-go@v6
+        with:
+          go-version: 'stable'
+      
+      - name: Native Build Caddy
+        if: ${{ github.event.inputs.dockerfile_name == 'Dockerfile.caddy' || github.event.client_payload.dockerfile_name == 'Dockerfile.caddy' }}
+        run: |
+          go install github.com/caddyserver/xcaddy/cmd/xcaddy@latest
+          IFS=',' read -ra ADDR <<< "${{ env.DOCKER_PLATFORMS }}"
+          for platform in "${ADDR[@]}"; do
+            OS=$(echo $platform | cut -d'/' -f1)
+            ARCH=$(echo $platform | cut -d'/' -f2)
+            VARIANT=$(echo $platform | cut -d'/' -f3)
+
+            echo "===> Building for $platform (OS: $OS, ARCH: $ARCH, VARIANT: $VARIANT)"
+
+            export GOARM=""
+            if [ "$ARCH" = "arm" ]; then
+              if [ "$VARIANT" = "v7" ]; then export GOARM="7"; fi
+              if [ "$VARIANT" = "v6" ]; then export GOARM="6"; fi
+            fi
+
+            FILE_NAME=$(echo $platform | sed 's/\//_/g')
+            GOOS=$OS GOARCH=$ARCH GOARM=$GOARM CGO_ENABLED=0 GO111MODULE=on xcaddy build \
+              --with github.com/caddy-dns/cloudflare \
+              --output "./dist/${FILE_NAME}"
+          done
+
       - name: Build and push image
         uses: docker/build-push-action@v6
         with:
           context: .
           file: ${{ github.event.inputs.dockerfile_name || github.event.client_payload.dockerfile_name }}
           push: true
-          platforms: linux/amd64,linux/arm64,linux/arm/v7,linux/ppc64le,linux/s390x
+          platforms: ${{ env.DOCKER_PLATFORMS }}
           tags: |
             ${{ env.IMAGE_NAME }}:${{ steps.version.outputs.version }}
             ${{ env.IMAGE_NAME }}:latest

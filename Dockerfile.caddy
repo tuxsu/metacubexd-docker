@@ -1,14 +1,12 @@
-FROM caddy:builder AS builder
-
-RUN xcaddy build \
-	--with github.com/caddy-dns/cloudflare
+FROM alpine AS builder
 
 RUN set -eux; \
 	apk add --no-cache tzdata; \
 	mkdir -p /config/caddy /data/caddy
 
-
 FROM scratch
+
+ARG TARGETPLATFORM
 
 ENV TZ=UTC
 ENV XDG_CONFIG_HOME=/config
@@ -16,7 +14,7 @@ ENV XDG_DATA_HOME=/data
 
 COPY metacubexd/ /srv/
 COPY Caddyfile /etc/caddy/Caddyfile
-COPY --from=builder /usr/bin/caddy /caddy
+COPY dist/${TARGETPLATFORM//\//_} /caddy
 COPY --from=builder /config /config
 COPY --from=builder /data /data
 COPY --from=builder /usr/share/zoneinfo /usr/share/zoneinfo
